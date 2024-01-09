@@ -30,7 +30,7 @@ public class HttpProxy
             return await BadRequestAsync(req, "An URL must be specified in the `url` query parameter", cancellationToken);
         }
 
-        if (!Uri.TryCreate(url, UriKind.RelativeOrAbsolute, out var uri))
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
             return await BadRequestAsync(req, $"The URL ({url}) is invalid", cancellationToken);
         }
