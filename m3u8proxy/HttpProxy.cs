@@ -90,7 +90,7 @@ public class HttpProxy
     {
         var result = req.CreateResponse(HttpStatusCode.BadRequest);
         result.Headers.Add("Content-Type", "text/plain; charset=utf-8");
-        await result.WriteStringAsync($"❌ {error}", cancellationToken);
+        await result.WriteStringAsync($"❌ {error}\n", cancellationToken);
         return result;
     }
 
