@@ -99,6 +99,7 @@ public class HttpProxy
         var absoluteUrl = Uri.TryCreate(relativeUri, UriKind.Absolute, out var absoluteUri) ? absoluteUri : new Uri(baseUri, relativeUri);
         var escapedUrl = Uri.EscapeDataString(absoluteUrl.AbsoluteUri);
         var proxyUrl = $"{req.Url.GetLeftPart(UriPartial.Path)}?url={escapedUrl}";
-        return proxyUrl;
+        var code = req.Query["code"];
+        return code == null ? proxyUrl : $"{proxyUrl}&code={code}";
     }
 }
