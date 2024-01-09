@@ -65,9 +65,9 @@ public class HttpProxy
                 {
                     const string pattern = "URI=\"([^\"]+)\"";
                     var match = Regex.Match(line, pattern);
-                    if (match.Success && !match.Groups[1].Value.StartsWith("http"))
+                    if (match.Success)
                     {
-                        var replacedLine = Regex.Replace(line, pattern, $"URI=\"{GetProxyUrl(req, uri, line)}\"");
+                        var replacedLine = Regex.Replace(line, pattern, $"URI=\"{GetProxyUrl(req, uri, match.Groups[1].Value)}\"");
                         await result.WriteStringAsync($"{replacedLine}\n", cancellationToken);
                     }
                     else
@@ -94,10 +94,10 @@ public class HttpProxy
         return result;
     }
 
-    private static string GetProxyUrl(HttpRequestData req, Uri uri, string line)
+    private static string GetProxyUrl(HttpRequestData req, Uri baseUri, string relativeUri)
     {
-        var relativeUrl = new Uri(uri, line);
-        var escapedUrl = Uri.EscapeDataString(relativeUrl.AbsoluteUri);
+        var absoluteUrl = Uri.TryCreate(relativeUri, UriKind.Absolute, out var absoluteUri) ? absoluteUri : new Uri(baseUri, relativeUri);
+        var escapedUrl = Uri.EscapeDataString(absoluteUrl.AbsoluteUri);
         var proxyUrl = $"{req.Url.GetLeftPart(UriPartial.Path)}?url={escapedUrl}";
         return proxyUrl;
     }
