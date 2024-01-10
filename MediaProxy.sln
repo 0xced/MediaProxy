@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "m3u8proxy", "m3u8proxy\m3u8proxy.csproj", "{25695850-AA39-4808-BB80-CA8B27342F3A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediaProxy", "MediaProxy\MediaProxy.csproj", "{25695850-AA39-4808-BB80-CA8B27342F3A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
