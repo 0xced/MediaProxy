@@ -11,11 +11,7 @@ var host = new HostBuilder()
             {
                 var handler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All };
                 var proxy = context.Configuration.GetValue<string>("HttpClientProxy");
-                if (proxy != null)
-                {
-                    handler.Proxy = new WebProxy(proxy);
-                }
-
+                handler.Proxy = proxy == null ? null : new WebProxy(proxy);
                 return handler;
             });
     })

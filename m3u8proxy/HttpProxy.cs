@@ -55,7 +55,7 @@ public class HttpProxy
         {
             using var reader = new StreamReader(stream);
             string? previousLine = null;
-            while (await reader.ReadLineAsync() is {} line)
+            while (await reader.ReadLineAsync(cancellationToken) is {} line)
             {
                 if (previousLine != null && (previousLine.StartsWith("#EXT-X-STREAM-INF") || previousLine.StartsWith("#EXTINF")))
                 {
