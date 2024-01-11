@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace MediaProxy;
 
-public class HttpProxy
+public partial class HttpProxy
 {
     private readonly ILogger _logger;
     private readonly HttpClient _httpClient;
@@ -60,12 +60,12 @@ public class HttpProxy
                 }
                 else
                 {
-                    const string pattern = "URI=\"([^\"]+)\"";
-                    var match = Regex.Match(line, pattern);
+                    var match = UriRegex().Match(line);
                     if (match.Success)
                     {
-                        var replacedLine = Regex.Replace(line, pattern, $"URI=\"{GetProxyUrl(req, uri, match.Groups[1].Value)}\"");
-                        await result.WriteStringAsync($"{replacedLine}\n", cancellationToken);
+                        var uriMatch = match.Groups[1];
+                        var proxyLine = $"{line[..uriMatch.Index]}{GetProxyUrl(req, uri, uriMatch.Value)}{line[(uriMatch.Index + uriMatch.Length)..]}";
+                        await result.WriteStringAsync($"{proxyLine}\n", cancellationToken);
                     }
                     else
                     {
@@ -119,4 +119,7 @@ public class HttpProxy
         var code = req.Query["code"];
         return code == null ? proxyUrl : $"{proxyUrl}&code={code}";
     }
+
+    [GeneratedRegex("URI=\"([^\"]+)\"")]
+    private static partial Regex UriRegex();
 }
