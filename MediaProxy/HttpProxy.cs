@@ -18,11 +18,9 @@ public class HttpProxy
     }
 
     [Function("proxy")]
-    public async Task<HttpResponseData> RunAsync([HttpTrigger(AuthorizationLevel.Function, "get")] HttpRequestData req, FunctionContext executionContext)
+    public async Task<HttpResponseData> RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", Route = "{*ignored}")] HttpRequestData req, FunctionContext executionContext, string ignored = "")
     {
         var cancellationToken = executionContext.CancellationToken;
-
-        _logger.LogInformation("C# HTTP trigger function processed a request");
 
         var url = req.Query["url"];
         if (url == null)
@@ -35,11 +33,7 @@ public class HttpProxy
             return await BadRequestAsync(req, $"The URL ({url}) is invalid", cancellationToken);
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        foreach (var (headerKey, headerValue) in req.Headers.Where(e => e.Key is "Accept" or "Range"))
-        {
-            request.Headers.Add(headerKey, headerValue);
-        }
+        var request = CreateRequest(req, uri);
         var response = await _httpClient.SendAsync(request, cancellationToken);
 
         var result = req.CreateResponse(response.StatusCode);
@@ -51,7 +45,10 @@ public class HttpProxy
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
-        if (response.Content.Headers.ContentType?.MediaType == "application/x-mpegURL")
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        if (mediaType != null && (mediaType.Equals("application/x-mpegurl", StringComparison.OrdinalIgnoreCase) ||
+                                  mediaType.Equals("audio/mpegurl", StringComparison.OrdinalIgnoreCase) ||
+                                  mediaType.Equals("application/vnd.apple.mpegurl", StringComparison.OrdinalIgnoreCase)))
         {
             using var reader = new StreamReader(stream);
             string? previousLine = null;
@@ -86,6 +83,26 @@ public class HttpProxy
         return result;
     }
 
+    private HttpRequestMessage CreateRequest(HttpRequestData req, Uri uri)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        foreach (var (headerKey, headerValue) in req.Headers.Where(e => e.Key != "Host"))
+        {
+            request.Headers.Add(headerKey, headerValue);
+        }
+
+        _logger.LogInformation("GET {Uri}", uri);
+        foreach (var (headerKey, headerValues) in request.Headers)
+        {
+            foreach (var headerValue in headerValues)
+            {
+                _logger.LogInformation("{HeaderKey}: {HeaderValue}", headerKey, headerValue);
+            }
+        }
+
+        return request;
+    }
+
     private static async Task<HttpResponseData> BadRequestAsync(HttpRequestData req, string error, CancellationToken cancellationToken)
     {
         var result = req.CreateResponse(HttpStatusCode.BadRequest);
@@ -98,7 +115,7 @@ public class HttpProxy
     {
         var absoluteUrl = Uri.TryCreate(relativeUri, UriKind.Absolute, out var absoluteUri) ? absoluteUri : new Uri(baseUri, relativeUri);
         var escapedUrl = Uri.EscapeDataString(absoluteUrl.AbsoluteUri);
-        var proxyUrl = $"{req.Url.GetLeftPart(UriPartial.Path)}?url={escapedUrl}";
+        var proxyUrl = $"{req.Url.GetLeftPart(UriPartial.Authority)}?url={escapedUrl}";
         var code = req.Query["code"];
         return code == null ? proxyUrl : $"{proxyUrl}&code={code}";
     }
