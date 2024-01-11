@@ -1,4 +1,5 @@
 using System.Net;
+using MediaProxy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,7 +16,7 @@ var host = new HostBuilder()
                 return handler;
             });
     })
-    .ConfigureFunctionsWorkerDefaults()
+    .ConfigureFunctionsWorkerDefaults(app => app.UseMiddleware<InformationalVersionMiddleware>())
     .Build();
 
 host.Run();
