@@ -1,14 +1,16 @@
-using System.Globalization;
-using System.Net;
 using System.Net.Http.Headers;
-using System.Text.RegularExpressions;
+using System.Net.Mime;
+using System.Text;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
+using MediaTypeHeaderValue = Microsoft.Net.Http.Headers.MediaTypeHeaderValue;
+using static Microsoft.AspNetCore.Http.StatusCodes;
 
 namespace MediaProxy;
 
-public partial class HttpProxy
+public class HttpProxy
 {
     // See https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-p1-messaging-14#section-7.1.3.1
     private static readonly string[] HopByHopHeaders = [
@@ -25,87 +27,73 @@ public partial class HttpProxy
     }
 
     [Function("proxy")]
-    public async Task<HttpResponseData> RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", Route = "{*ignored}")] HttpRequestData req, FunctionContext executionContext, string ignored = "")
+    public async Task RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", Route = "{*ignored}")] FunctionContext context, string ignored = "")
     {
-        var cancellationToken = executionContext.CancellationToken;
+        var cancellationToken = context.CancellationToken;
+        var (request, response) = GetRequestAndResponse(context);
 
-        var url = req.Query["url"];
-        if (url == null)
+        var url = request.Query["url"];
+        switch (url.Count)
         {
-            return await BadRequestAsync(req, "An URL must be specified in the `url` query parameter", cancellationToken);
+            case 0:
+                await BadRequestAsync(response, "An URL must be specified in the `url` query parameter", cancellationToken);
+                return;
+            case > 1:
+                await BadRequestAsync(response, "An single `url` query parameter must be specified", cancellationToken);
+                return;
         }
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
-            return await BadRequestAsync(req, $"The URL ({url}) is invalid", cancellationToken);
+            await BadRequestAsync(response, $"The URL ({url}) is invalid", cancellationToken);
+            return;
         }
 
-        var request = CreateRequest(req, uri);
-        var httpResponse = await _httpClient.SendAsync(request, cancellationToken);
-        var response = CreateResponse(req, httpResponse);
+        var httpRequest = CreateRequest(request, uri);
+        var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        var contentLength = httpResponse.Content.Headers.ContentLength;
 
-        await using var stream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
+        await using var httpStream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
 
         var mediaType = httpResponse.Content.Headers.ContentType?.MediaType;
         if (mediaType != null && (mediaType.Equals("application/x-mpegurl", StringComparison.OrdinalIgnoreCase) ||
                                   mediaType.Equals("audio/mpegurl", StringComparison.OrdinalIgnoreCase) ||
                                   mediaType.Equals("application/vnd.apple.mpegurl", StringComparison.OrdinalIgnoreCase)))
         {
-            using var reader = new StreamReader(stream);
-            bool readingExtInf = false;
-            var contentLength = 0;
-            while (await reader.ReadLineAsync(cancellationToken) is {} line)
-            {
-                int lineLength;
-                if (readingExtInf && !line.StartsWith('#'))
-                {
-                    lineLength = await response.WriteLineAsync(GetProxyUrl(req, uri, line), cancellationToken);
-                    readingExtInf = false;
-                }
-                else
-                {
-                    var match = UriRegex().Match(line);
-                    if (match.Success)
-                    {
-                        var uriMatch = match.Groups[1];
-                        var proxyLine = $"{line[..uriMatch.Index]}{GetProxyUrl(req, uri, uriMatch.Value)}{line[(uriMatch.Index + uriMatch.Length)..]}";
-                        lineLength = await response.WriteLineAsync(proxyLine, cancellationToken);
-                    }
-                    else
-                    {
-                        lineLength = await response.WriteLineAsync(line, cancellationToken);
-                    }
-                }
-                contentLength += lineLength;
-                if (line.StartsWith("#EXT-X-STREAM-INF") || line.StartsWith("#EXTINF"))
-                {
-                    readingExtInf = true;
-                }
-            }
-            response.Headers.Remove("Content-Length");
-            response.Headers.Add("Content-Length", contentLength.ToString(NumberFormatInfo.InvariantInfo));
+            var transformer = new PlaylistTransformer($"{request.Scheme}{Uri.SchemeDelimiter}{request.Host}", request.Query["code"].FirstOrDefault());
+            await using var playlistStream = new MemoryStream(contentLength.HasValue ? Convert.ToInt32(contentLength.Value) * 2 : 2048);
+            await transformer.ProxifyAsync(uri, httpStream, playlistStream, cancellationToken);
+            playlistStream.Position = 0;
+            await WriteResponseAsync(httpResponse, response, playlistStream, playlistStream.Length, cancellationToken);
         }
         else
         {
-            await stream.CopyToAsync(response.Body, cancellationToken);
+            await WriteResponseAsync(httpResponse, response, httpStream, contentLength, cancellationToken);
         }
-
-        return response;
     }
 
-    private HttpRequestMessage CreateRequest(HttpRequestData req, Uri uri)
+    private static (HttpRequest Request, HttpResponse Response) GetRequestAndResponse(FunctionContext context)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        // Remove Hop-by-hop Headers, see https://www.mnot.net/blog/2011/07/11/what_proxies_must_do.html#1-remove-hop-by-hop-headers
-        foreach (var (headerKey, headerValue) in req.Headers.Where(e => ShouldIncludeHeader(e.Key, request.Headers)))
+        var httpContext = context.GetHttpContext() ?? throw new InvalidOperationException("HttpContext is not available");
+        return (httpContext.Request, httpContext.Response);
+    }
+
+    private HttpRequestMessage CreateRequest(HttpRequest request, Uri uri)
+    {
+        var httpRequest = new HttpRequestMessage(HttpMethod.Get, uri);
+        // Ignore Hop-by-hop Headers, see https://www.mnot.net/blog/2011/07/11/what_proxies_must_do.html#1-remove-hop-by-hop-headers
+        foreach (var (headerKey, headerValues) in request.Headers.Where(e => ShouldIncludeHeader(e.Key, httpRequest.Headers)))
         {
-            request.Headers.Add(headerKey, headerValue);
+            foreach (var headerValue in headerValues)
+            {
+                httpRequest.Headers.Add(headerKey, headerValue);
+            }
         }
         // Make sure to set the proper host, see https://www.mnot.net/blog/2011/07/11/what_proxies_must_do.html#3-route-well
-        request.Headers.Host = uri.Authority;
+        httpRequest.Headers.Host = uri.Authority;
 
         _logger.LogInformation("GET {Uri}", uri);
-        foreach (var (headerKey, headerValues) in request.Headers)
+        foreach (var (headerKey, headerValues) in httpRequest.Headers)
         {
             foreach (var headerValue in headerValues)
             {
@@ -113,31 +101,41 @@ public partial class HttpProxy
             }
         }
 
-        return request;
+        return httpRequest;
     }
 
-    private static HttpResponseData CreateResponse(HttpRequestData req, HttpResponseMessage response)
+    private static async Task WriteResponseAsync(HttpResponseMessage httpResponse, HttpResponse response, Stream stream, long? contentLength, CancellationToken cancellationToken)
     {
-        var responseData = req.CreateResponse(response.StatusCode);
+        response.StatusCode = (int)httpResponse.StatusCode;
 
-        // Remove Hop-by-hop Headers, see https://www.mnot.net/blog/2011/07/11/what_proxies_must_do.html#1-remove-hop-by-hop-headers
-        var headers = new HttpHeadersCollection(response.Content.Headers.Concat(response.Headers));
+        // Ignore Hop-by-hop Headers, see https://www.mnot.net/blog/2011/07/11/what_proxies_must_do.html#1-remove-hop-by-hop-headers
+        var headers = new HttpHeadersCollection(httpResponse.Content.Headers.Concat(httpResponse.Headers));
         foreach (var header in headers.Where(e => ShouldIncludeHeader(e.Key, headers)))
         {
-            responseData.Headers.Add(header.Key, header.Value);
+            foreach (var headerValue in header.Value)
+            {
+                response.Headers.Append(header.Key, headerValue);
+            }
         }
 
-        return responseData;
+        response.GetTypedHeaders().ContentLength = contentLength;
+        await stream.CopyToAsync(response.Body, cancellationToken);
     }
 
-    // See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection
     private static bool ShouldIncludeHeader(string header, HttpHeaders headers)
     {
+        // The content length is set later
+        if (string.Equals(header, "Content-Length", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (HopByHopHeaders.Contains(header, StringComparer.OrdinalIgnoreCase))
         {
             return false;
         }
 
+        // See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection
         if (headers.TryGetValues("Connection", out var connection))
         {
             return !connection.Contains(header, StringComparer.OrdinalIgnoreCase);
@@ -146,23 +144,11 @@ public partial class HttpProxy
         return true;
     }
 
-    private static async Task<HttpResponseData> BadRequestAsync(HttpRequestData req, string error, CancellationToken cancellationToken)
+    private static async Task BadRequestAsync(HttpResponse response, string error, CancellationToken cancellationToken)
     {
-        var response = req.CreateResponse(HttpStatusCode.BadRequest);
-        response.Headers.Add("Content-Type", "text/plain; charset=utf-8");
+        response.StatusCode = Status400BadRequest;
+        response.GetTypedHeaders().ContentType = new MediaTypeHeaderValue(MediaTypeNames.Text.Plain) { Charset = Encoding.UTF8.WebName };
         await response.WriteLineAsync($"❌ {error}", cancellationToken);
-        return response;
     }
 
-    private static string GetProxyUrl(HttpRequestData req, Uri baseUri, string relativeUri)
-    {
-        var absoluteUrl = Uri.TryCreate(relativeUri, UriKind.Absolute, out var absoluteUri) ? absoluteUri : new Uri(baseUri, relativeUri);
-        var escapedUrl = Uri.EscapeDataString(absoluteUrl.AbsoluteUri);
-        var proxyUrl = $"{req.Url.GetLeftPart(UriPartial.Path)}?url={escapedUrl}";
-        var code = req.Query["code"];
-        return code == null ? proxyUrl : $"{proxyUrl}&code={code}";
-    }
-
-    [GeneratedRegex("URI=\"([^\"]+)\"")]
-    private static partial Regex UriRegex();
 }

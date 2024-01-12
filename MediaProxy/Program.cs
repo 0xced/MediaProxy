@@ -16,7 +16,7 @@ var host = new HostBuilder()
                 return handler;
             });
     })
-    .ConfigureFunctionsWorkerDefaults(app => app.UseMiddleware<InformationalVersionMiddleware>())
+    .ConfigureFunctionsWebApplication(app => app.UseMiddleware<InformationalVersionMiddleware>())
     .Build();
 
 host.Run();
