@@ -52,14 +52,15 @@ public partial class HttpProxy
                                   mediaType.Equals("application/vnd.apple.mpegurl", StringComparison.OrdinalIgnoreCase)))
         {
             using var reader = new StreamReader(stream);
-            string? previousLine = null;
+            bool readingExtInf = false;
             var contentLength = 0;
             while (await reader.ReadLineAsync(cancellationToken) is {} line)
             {
                 int lineLength;
-                if (previousLine != null && (previousLine.StartsWith("#EXT-X-STREAM-INF") || previousLine.StartsWith("#EXTINF")))
+                if (readingExtInf && !line.StartsWith('#'))
                 {
                     lineLength = await response.WriteLineAsync(GetProxyUrl(req, uri, line), cancellationToken);
+                    readingExtInf = false;
                 }
                 else
                 {
@@ -76,7 +77,10 @@ public partial class HttpProxy
                     }
                 }
                 contentLength += lineLength;
-                previousLine = line;
+                if (line.StartsWith("#EXT-X-STREAM-INF") || line.StartsWith("#EXTINF"))
+                {
+                    readingExtInf = true;
+                }
             }
             response.Headers.Remove("Content-Length");
             response.Headers.Add("Content-Length", contentLength.ToString(NumberFormatInfo.InvariantInfo));
