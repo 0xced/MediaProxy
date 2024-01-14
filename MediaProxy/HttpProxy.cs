@@ -1,12 +1,8 @@
 using System.Net.Http.Headers;
-using System.Net.Mime;
-using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
-using MediaTypeHeaderValue = Microsoft.Net.Http.Headers.MediaTypeHeaderValue;
-using static Microsoft.AspNetCore.Http.StatusCodes;
 
 namespace MediaProxy;
 
@@ -32,23 +28,7 @@ public class HttpProxy
         var cancellationToken = context.CancellationToken;
         var (request, response) = GetRequestAndResponse(context);
 
-        var url = request.Query["url"];
-        switch (url.Count)
-        {
-            case 0:
-                await BadRequestAsync(response, "An URL must be specified in the `url` query parameter", cancellationToken);
-                return;
-            case > 1:
-                await BadRequestAsync(response, "An single `url` query parameter must be specified", cancellationToken);
-                return;
-        }
-
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-        {
-            await BadRequestAsync(response, $"The URL ({url}) is invalid", cancellationToken);
-            return;
-        }
-
+        var uri = GetUri(request);
         var httpRequest = CreateRequest(request, uri);
         var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken);
         var contentLength = httpResponse.Content.Headers.ContentLength;
@@ -70,6 +50,23 @@ public class HttpProxy
         {
             await WriteResponseAsync(httpResponse, response, httpStream, contentLength, cancellationToken);
         }
+    }
+
+    private static Uri GetUri(HttpRequest request)
+    {
+        var url = request.Query["url"];
+        switch (url.Count)
+        {
+            case 0: throw new BadHttpRequestException("An URL must be specified in the `url` query parameter");
+            case > 1: throw new BadHttpRequestException("An single `url` query parameter must be specified");
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            throw new BadHttpRequestException($"The URL ({url}) is invalid");
+        }
+
+        return uri;
     }
 
     private static (HttpRequest Request, HttpResponse Response) GetRequestAndResponse(FunctionContext context)
@@ -143,12 +140,4 @@ public class HttpProxy
 
         return true;
     }
-
-    private static async Task BadRequestAsync(HttpResponse response, string error, CancellationToken cancellationToken)
-    {
-        response.StatusCode = Status400BadRequest;
-        response.GetTypedHeaders().ContentType = new MediaTypeHeaderValue(MediaTypeNames.Text.Plain) { Charset = Encoding.UTF8.WebName };
-        await response.WriteLineAsync($"❌ {error}", cancellationToken);
-    }
-
 }

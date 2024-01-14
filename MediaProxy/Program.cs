@@ -16,7 +16,11 @@ var host = new HostBuilder()
                 return handler;
             });
     })
-    .ConfigureFunctionsWebApplication(app => app.UseMiddleware<InformationalVersionMiddleware>())
+    .ConfigureFunctionsWebApplication(app =>
+    {
+        app.UseMiddleware<BadHttpRequestMiddleware>();
+        app.UseMiddleware<InformationalVersionMiddleware>();
+    })
     .Build();
 
 host.Run();
