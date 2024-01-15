@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Worker;
@@ -9,9 +10,14 @@ namespace MediaProxy;
 public class HttpProxy
 {
     // See https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-p1-messaging-14#section-7.1.3.1
-    private static readonly string[] HopByHopHeaders = [
+    private static readonly FrozenSet<string> HopByHopHeaders = new[] {
         "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization", "TE", "Trailer", "Transfer-Encoding", "Upgrade"
-    ];
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenSet<string> HlsMediaTypes = new[]
+    {
+        "application/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     private readonly ILogger _logger;
     private readonly HttpClient _httpClient;
@@ -36,9 +42,7 @@ public class HttpProxy
         await using var httpStream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
 
         var mediaType = httpResponse.Content.Headers.ContentType?.MediaType;
-        if (mediaType != null && (mediaType.Equals("application/x-mpegurl", StringComparison.OrdinalIgnoreCase) ||
-                                  mediaType.Equals("audio/mpegurl", StringComparison.OrdinalIgnoreCase) ||
-                                  mediaType.Equals("application/vnd.apple.mpegurl", StringComparison.OrdinalIgnoreCase)))
+        if (mediaType != null && HlsMediaTypes.Contains(mediaType))
         {
             var transformer = new PlaylistTransformer($"{request.Scheme}{Uri.SchemeDelimiter}{request.Host}", request.Query["code"].FirstOrDefault());
             await using var playlistStream = new MemoryStream(contentLength.HasValue ? Convert.ToInt32(contentLength.Value) * 2 : 2048);
@@ -127,7 +131,7 @@ public class HttpProxy
             return false;
         }
 
-        if (HopByHopHeaders.Contains(header, StringComparer.OrdinalIgnoreCase))
+        if (HopByHopHeaders.Contains(header))
         {
             return false;
         }
