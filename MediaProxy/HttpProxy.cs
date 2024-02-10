@@ -32,7 +32,7 @@ public class HttpProxy
     public async Task RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", Route = "{*ignored}")] FunctionContext context, string ignored = "")
     {
         var cancellationToken = context.CancellationToken;
-        var (request, response) = GetRequestAndResponse(context);
+        var (request, response) = context.GetRequestAndResponse();
 
         var uri = GetUri(request);
         var httpRequest = CreateRequest(request, uri);
@@ -71,12 +71,6 @@ public class HttpProxy
         }
 
         return uri;
-    }
-
-    private static (HttpRequest Request, HttpResponse Response) GetRequestAndResponse(FunctionContext context)
-    {
-        var httpContext = context.GetHttpContext() ?? throw new InvalidOperationException("HttpContext is not available");
-        return (httpContext.Request, httpContext.Response);
     }
 
     private HttpRequestMessage CreateRequest(HttpRequest request, Uri uri)
