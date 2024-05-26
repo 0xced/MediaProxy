@@ -12,21 +12,15 @@ It was written to download [France TV](https://www.france.tv) content outside of
 ```diff
 --- a/yt_dlp/extractor/francetv.py
 +++ b/yt_dlp/extractor/francetv.py
-@@ -1,3 +1,5 @@
-+import urllib.parse
-+
- from .common import InfoExtractor
- from .dailymotion import DailymotionIE
- from ..utils import (
-@@ -144,6 +146,8 @@ def _extract_video(self, video_id, catalogue=None):
-                 video_url = video.get('url')
+@@ -130,6 +130,8 @@ def _extract_video(self, video_id, hostname=None):
+                     video_url = tokenized_url
  
              ext = determine_ext(video_url)
 +            video_url = (f'https://<DEPLOYMENT_URL>.azurewebsites.net/?url={urllib.parse.quote(video_url)}'
 +                         f'&code=<FUNCTION_KEY>')
              if ext == 'f4m':
                  formats.extend(self._extract_f4m_formats(
-                     video_url, video_id, f4m_id=format_id, fatal=False))
+                     video_url, video_id, f4m_id=format_id or ext, fatal=False))
 ```
 
 3. Download some content, make sure to explicitly specify the HLS streams (PROTO = m3u8) with the `-f` option and download 50 fragments concurrently to speed up the download using the `-N 50` option
