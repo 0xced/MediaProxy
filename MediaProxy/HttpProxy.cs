@@ -30,10 +30,10 @@ public class HttpProxy
     }
 
     [Function("proxy")]
-    public async Task RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", Route = "{*ignored}")] FunctionContext context, string ignored = "")
+    public async Task RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", Route = "{*ignored}")] HttpContext httpContext, string ignored = "", CancellationToken cancellationToken = default)
     {
-        var cancellationToken = context.CancellationToken;
-        var (request, response) = context.GetRequestAndResponse();
+        var request = httpContext.Request;
+        var response = httpContext.Response;
 
         var uri = GetUri(request);
         var httpRequest = CreateRequest(request, uri);

@@ -16,7 +16,7 @@ public class BadHttpRequestMiddleware : IFunctionsWorkerMiddleware
         }
         catch (BadHttpRequestException exception)
         {
-            var response = context.GetResponse();
+            var response = (context.GetHttpContext() ?? throw new InvalidOperationException("HttpContext is not available")).Response;
             response.StatusCode = exception.StatusCode;
             response.Headers[HeaderNames.ContentType] = "text/plain; charset=utf-8";
             await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(exception.Message), context.CancellationToken);
