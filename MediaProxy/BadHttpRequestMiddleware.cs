@@ -19,7 +19,7 @@ public class BadHttpRequestMiddleware : IFunctionsWorkerMiddleware
             var response = context.GetResponse();
             response.StatusCode = exception.StatusCode;
             response.Headers[HeaderNames.ContentType] = "text/plain; charset=utf-8";
-            await response.Body.WriteAsync(Encoding.UTF8.GetBytes(exception.Message), context.CancellationToken);
+            await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(exception.Message), context.CancellationToken);
         }
     }
 }

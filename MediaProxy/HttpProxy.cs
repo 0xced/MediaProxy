@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.IO.Pipelines;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Worker;
@@ -113,8 +114,12 @@ public class HttpProxy
             }
         }
 
-        response.GetTypedHeaders().ContentLength = contentLength;
-        await stream.CopyToAsync(response.Body, cancellationToken);
+        if (contentLength != null)
+        {
+            response.GetTypedHeaders().ContentLength = contentLength;
+        }
+
+        await stream.CopyToAsync(response.BodyWriter, cancellationToken);
     }
 
     private static bool ShouldIncludeHeader(string header, HttpHeaders headers)
