@@ -16,10 +16,17 @@ public class BadHttpRequestMiddleware : IFunctionsWorkerMiddleware
         }
         catch (BadHttpRequestException exception)
         {
-            var response = context.GetResponse();
-            response.StatusCode = exception.StatusCode;
-            response.Headers[HeaderNames.ContentType] = "text/plain; charset=utf-8";
-            await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(exception.Message), context.CancellationToken);
+            var response = context.GetHttpContext()?.Response;
+            if (response != null)
+            {
+                response.StatusCode = exception.StatusCode;
+                response.Headers[HeaderNames.ContentType] = "text/plain; charset=utf-8";
+                await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(exception.Message), context.CancellationToken);
+            }
+            else
+            {
+                throw;
+            }
         }
     }
 }

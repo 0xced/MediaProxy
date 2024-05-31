@@ -30,11 +30,8 @@ public class HttpProxy
     }
 
     [Function("proxy")]
-    public async Task RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", Route = "{*ignored}")] FunctionContext context, string ignored = "")
+    public async Task RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", Route = "{*ignored}")] HttpRequest request, string ignored = "", CancellationToken cancellationToken = default)
     {
-        var cancellationToken = context.CancellationToken;
-        var (request, response) = context.GetRequestAndResponse();
-
         var uri = GetUri(request);
         var httpRequest = CreateRequest(request, uri);
         var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken);
@@ -49,11 +46,11 @@ public class HttpProxy
             await using var playlistStream = new MemoryStream(contentLength.HasValue ? Convert.ToInt32(contentLength.Value) * 2 : 2048);
             await transformer.ProxifyAsync(uri, httpStream, playlistStream, cancellationToken);
             playlistStream.Position = 0;
-            await WriteResponseAsync(httpResponse, response, playlistStream, playlistStream.Length, cancellationToken);
+            await WriteResponseAsync(httpResponse, request.HttpContext.Response, playlistStream, playlistStream.Length, cancellationToken);
         }
         else
         {
-            await WriteResponseAsync(httpResponse, response, httpStream, contentLength, cancellationToken);
+            await WriteResponseAsync(httpResponse, request.HttpContext.Response, httpStream, contentLength, cancellationToken);
         }
     }
 
