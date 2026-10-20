@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
 
