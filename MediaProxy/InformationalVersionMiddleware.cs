@@ -12,10 +12,7 @@ public class InformationalVersionMiddleware : IFunctionsWorkerMiddleware
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var httpContext = context.GetHttpContext();
-        if (httpContext != null)
-        {
-            httpContext.Response.Headers["X-InformationalVersion"] = InformationalVersion;
-        }
+        httpContext?.Response.Headers["X-InformationalVersion"] = InformationalVersion;
         await next(context);
     }
 }
